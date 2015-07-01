@@ -243,8 +243,6 @@ ssize_t dv_spi_ioctl(struct inode *inode, struct file *filp,\
 	  case Cmd_reset:
 	  {
 		 reset_spimaster();
-		 memset(g_readbuf,0,sizeof(g_readbuf));
-		 kfifo_reset(g_kfifo);
 		 tmp = 0;
 	  }
 	  break;
@@ -307,10 +305,6 @@ static struct file_operations dv_spi_fops =
 static int dv_spi_init(void)
 {
 	int result;
-
-
-	gpio_direction_output(37, 0);
-
 	/* Registering device */
 	result = register_chrdev(MAJOR_VERSION, "spi", &dv_spi_fops);
 	if (result < 0)
