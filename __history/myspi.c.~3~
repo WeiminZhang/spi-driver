@@ -34,7 +34,6 @@
 #include <linux/clk.h>
 #include "myspi.h"
 
-
 // Global pointer to the clock struct. We use this to start up the LPSoC (local power system on chip)
 // so our SPI peripheral has power going to it.
 static struct clk *g_clkptr = NULL;
@@ -55,7 +54,6 @@ static unsigned char *g_readbuf = NULL;
 static enum spi_selchip g_selchip = Sel_chip0 ;
 static enum spi_dataformat g_dataformat = format_16bit;
 static unsigned int g_chip_mask = CHIP0_MASK;
-static unsigned int g_cshold_mask = 0;
 
 static void inline wait_untilsend(void)
 {
@@ -63,9 +61,10 @@ static void inline wait_untilsend(void)
 	{
       return;
 	}
-	while(SPIBUF_RXEMPTY_MASK & SPI_REG(SPIBUF))
+
+	while(SPIBUF_RXEMPTY_MASK == SPI_REG(SPIBUF))
 	{
-       cpu_relax();
+	   cpu_relax();
 	}
 }
 
@@ -98,6 +97,7 @@ static void reset_spimaster(void)
 	mdelay(1); // Delay for a bit
 	SPI_REG(SPIGCR0) = 0x00000001;
 	SPI_REG(SPIGCR1) = 0x00000003; //SPIGCR1 CLKMODºÍMASTERMOD
+
 }
 
 // Called when a userspace program opens the file
@@ -172,10 +172,10 @@ ssize_t dv_spi_write(struct file *filp, const char __user *buf, size_t count,
 {
 	size_t index = 0;
 	unsigned int datareg = 0;
-	Uarray buf_val;
-	size_t ret = -1;
+	Uarray buf_val ;
+	size_t ret = -1 ;
 
-	if((NULL == buf) || (count <= 0) || (count > MAX_BUF_SIZE))
+	if((NULL == buf) || (count<=0))
 	{
        return -EINVAL ;
 	}
@@ -197,13 +197,9 @@ ssize_t dv_spi_write(struct file *filp, const char __user *buf, size_t count,
 			   datareg &= (0x000000FF);
 			   datareg |= g_chip_mask;
 			   SPI_REG(SPIDAT1) = datareg;
-			   printk("\n1: datareg=%x\n",datareg);
 			   wait_untilsend();
-			   #if 1
 			   buf_val.udata = SPI_REG(SPIBUF);
-			   printk("\n1: SPIBUF=%x\n",buf_val.udata);
 			   add2kfifo(&(buf_val.uarray[0]),1);
-			   #endif
 			}
 		 }
 		 index++;
@@ -223,8 +219,6 @@ ssize_t dv_spi_write(struct file *filp, const char __user *buf, size_t count,
 			 datareg |= g_chip_mask;
 			 SPI_REG(SPIDAT1) = datareg;
 			 wait_untilsend();
-			 SPI_REG(SPIDAT1) = (datareg|0x8000);
-			 wait_untilsend();
 			 buf_val.udata = SPI_REG(SPIBUF);
 			 add2kfifo(&(buf_val.uarray[0]),2);
 		   }
@@ -238,7 +232,7 @@ ssize_t dv_spi_write(struct file *filp, const char __user *buf, size_t count,
 ssize_t dv_spi_ioctl(struct inode *inode, struct file *filp,\
 		enum  spi_commands cmd, const unsigned long arg)
 {
-	int tmp = -1;
+	int tmp = -1 ;
 
 	if((cmd < Cmd_reset) || (cmd > Cmd_Selchip) || (arg < Sel_chip0)||(arg > Sel_chip1))
 	{
@@ -256,14 +250,7 @@ ssize_t dv_spi_ioctl(struct inode *inode, struct file *filp,\
 	  break;
 	  case Cmd_enspi:
 	  {
-        if(Sel_chip0 == (enum  spi_selchip)arg)
-		{
-		   SPI_REG(SPIPC0) = 0x00000E01;
-		}
-		else if(Sel_chip1 == (enum  spi_selchip)arg)
-		{
-		   SPI_REG(SPIPC0) = 0x00000E02;
-		}
+		SPI_REG(SPIPC0) = (Sel_chip0 == (enum  spi_selchip)arg)?0x00000E01:0x00000E02;
 		tmp = 0;
 	  }
 	  break;
@@ -276,34 +263,22 @@ ssize_t dv_spi_ioctl(struct inode *inode, struct file *filp,\
 		 tmp = 0;
 	  }
 	  break;
-	  case Cmd_Cshold:
-	  {
-		 g_cshold_mask = (Cs_active_hold == (enum spi_cshold)arg)?BIT(28):0;
-#if 0
-		 ret = gpio_request(37,NULL);
-		 printk("\n gpio_is_valid,ret=%d \n",ret);
-		 ret = gpio_direction_output(37,1);
-		 printk("\n gpio_direction_output,ret=%d \n",ret);
-		 //gpio_direction_output(37, (const unsigned int)arg);
-#endif
-	  }
-	  break;
 	  case Cmd_Selchip:
 	  {
 		 g_selchip = (enum spi_selchip)arg;
 		 if(Sel_chip0 == g_selchip)
 		 {
 		   SPI_REG(SPIDAT1) = 0x00000000;
-		   SPI_REG(SPIDAT1) = (0x00020000 | g_cshold_mask);
+		   SPI_REG(SPIDAT1) = 0x00020000;
 		   SPI_REG(SPIDEF) = 0x00000001;
-		   g_chip_mask = (CHIP0_MASK | g_cshold_mask);
+		   g_chip_mask = CHIP0_MASK;
 		 }
 		 else if(Sel_chip1 == g_selchip)
 		 {
 		   SPI_REG(SPIDAT1) = 0x01000000;
-		   SPI_REG(SPIDAT1) = (0x00010000 | g_cshold_mask);
+		   SPI_REG(SPIDAT1) = 0x00010000;
 		   SPI_REG(SPIDEF) = 0x00000002;
-		   g_chip_mask = (CHIP1_MASK | g_cshold_mask);
+		   g_chip_mask = CHIP1_MASK;
 		 }
 		 SPI_REG(SPIGCR1) = 0x01000003;
 		 tmp = 0;
@@ -332,6 +307,9 @@ static struct file_operations dv_spi_fops =
 static int dv_spi_init(void)
 {
 	int result;
+
+
+	gpio_direction_output(37, 0);
 
 	/* Registering device */
 	result = register_chrdev(MAJOR_VERSION, "spi", &dv_spi_fops);
